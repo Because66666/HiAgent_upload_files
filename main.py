@@ -12,7 +12,25 @@ def get_files():
     for file in os.listdir('./upload'):
         files.append(os.path.abspath(os.path.join('./upload', file)))
     return files
+
+def click_import_button(page):
+    """
+    检测“导入文件”按钮是否在可视区域，必要时滚动后点击
+    """
+    buttons = page.get_by_role("button", name="导入文件")
+    btn = buttons.first
+    bbox = btn.bounding_box()
+    vw = page.evaluate("window.innerWidth")
+    vh = page.evaluate("window.innerHeight")
+    if not bbox or bbox["x"] < 0 or bbox["y"] < 0 or (bbox["x"] + bbox["width"]) > vw or (bbox["y"] + bbox["height"]) > vh:
+        btn.scroll_into_view_if_needed()
+        page.wait_for_timeout(200)
+    btn.click()
+    
 def run(playwright: Playwright):
+    """
+    使用 Playwright 登录目标站点并批量上传文件
+    """
     data = []
     id_,key,target = load_env()
     if not id_ or id_=='':
@@ -28,27 +46,33 @@ def run(playwright: Playwright):
     context = browser.new_context()
     page = context.new_page()
     page.goto("https://coze.nankai.edu.cn/login")
-    page.get_by_text("SSO登录").click()
-    page.get_by_role("textbox", name="请输入学号/工号").click()
-    page.get_by_role("textbox", name="请输入学号/工号").fill(id_)
-    page.get_by_role("textbox", name="请输入密码").click()
-    page.get_by_role("textbox", name="请输入密码").fill(key)
-    page.locator(".arco-checkbox-mask").first.click()
-    page.get_by_role("button", name="登 录").click()
+    page.wait_for_load_state('networkidle')
+    # page.pause()
+    # 检测是否使用浏览器快捷登录
+    if page.get_by_text("浏览器快捷登录").is_visible():
+        page.get_by_role("button", name="一键登录").click()
+    else:
+        page.get_by_text("SSO登录").click()
+        page.get_by_role("textbox", name="请输入学号/工号").click()
+        page.get_by_role("textbox", name="请输入学号/工号").fill(id_)
+        page.get_by_role("textbox", name="请输入密码").click()
+        page.get_by_role("textbox", name="请输入密码").fill(key)
+        page.locator(".arco-checkbox-mask").first.click()
+        page.get_by_role("button", name="登 录").click()
     page.wait_for_timeout(3000)
 
     page.goto(target)
     # page.pause()
-
+    page.wait_for_load_state('networkidle')
     for file in get_files():
         page.wait_for_timeout(1500)
-        page.get_by_role("button", name="导入文件").click()
+        click_import_button(page)
         page.wait_for_timeout(1000)
-        page.get_by_test_id("c-m-form-item-step.ProcessRuleFileType").locator("div").filter(has_text=re.compile(r"^表格$")).first.click()
-        page.wait_for_timeout(1000)
+        page.get_by_role("menuitem", name="标准导入 通过原始文件导入知识数据").locator("div").nth(3).click()
+        page.wait_for_load_state('networkidle')
         page.get_by_test_id("c-m-modal-ok-btn").click()
         page.wait_for_timeout(1000)
-        page.get_by_text("点击或拖拽文件到此处上传支持 csv，xls，xlsx").click()
+        page.get_by_text("点击或拖拽文件到此处上传").click()
         page.locator("input[type='file']").set_input_files(file)
 
         page.wait_for_timeout(3000)
